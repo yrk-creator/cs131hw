@@ -30,6 +30,8 @@ def energy_function(image):
     gray_image = color.rgb2gray(image)
 
     ### YOUR CODE HERE
+    grad1,grad2 = np.gradient(gray_image)
+    out = np.abs(grad1)+np.abs(grad2)
     pass
     ### END YOUR CODE
 
@@ -80,6 +82,30 @@ def compute_cost(image, energy, axis=1):
     paths[0] = 0  # we don't care about the first row of paths
 
     ### YOUR CODE HERE
+
+    for i in range(1, H):
+        # Calculate cost map at each row
+        '''Cost map = M[i,j] = E[i, j] + min(M[i-1, j-1], M[i-1, j], M[i-1, j+1])'''
+        M_left = cost[i - 1][:W - 1]
+        M_mid = cost[i - 1]
+        M_right = cost[i - 1][1:]
+
+        # Edge cases - left side and right side file with large number
+        M_left = np.insert(M_left, 0, 1 << 32, axis=0)
+        M_right = np.insert(M_right, W - 1, 1 << 32, axis=0)
+
+        M = np.array([M_left, M_mid, M_right])
+        cost[i] = energy[i] + np.min(M, axis=0)
+
+        # Pick minimum cost at row i-1 as path
+        '''
+        M.shape = (3, W), argmin returns 0~2
+        return 0 -> path should go through up and left
+        return 1 -> path should go through up
+        return 2 -> path should go through up and right
+        '''
+        paths[i] = np.argmin(M, axis=0) - 1
+
     pass
     ### END YOUR CODE
 
@@ -118,6 +144,8 @@ def backtrack_seam(paths, end):
     seam[H-1] = end
 
     ### YOUR CODE HERE
+    for i in range(1,H):
+        seam[H-1-i] = seam[H-i] + paths[H-i,seam[H-i]]
     pass
     ### END YOUR CODE
 
@@ -148,6 +176,8 @@ def remove_seam(image, seam):
     out = None
     H, W, C = image.shape
     ### YOUR CODE HERE
+    out = image[np.arange(W) != seam.reshape(-1,1)].reshape(H, W-1, C)
+
     pass
     ### END YOUR CODE
     out = np.squeeze(out)  # remove last dimension if C == 1
@@ -196,6 +226,13 @@ def reduce(image, size, axis=1, efunc=energy_function, cfunc=compute_cost, bfunc
     assert size > 0, "Size must be greater than zero"
 
     ### YOUR CODE HERE
+    while W>size:
+        eng = efunc(out)
+        cost,paths = cfunc(out,eng)
+        end = np.argmin(cost[-1])
+        seam = bfunc(paths,end)
+        out = rfunc(out,seam)
+        W-=1
     pass
     ### END YOUR CODE
 
@@ -223,6 +260,9 @@ def duplicate_seam(image, seam):
     H, W, C = image.shape
     out = np.zeros((H, W + 1, C))
     ### YOUR CODE HERE
+    for i in range(H):
+        row_idx = seam[i]
+        out[i] = np.insert(image[i],row_idx,image[i,seam[i]],axis=0)
     pass
     ### END YOUR CODE
 
@@ -264,6 +304,13 @@ def enlarge_naive(image, size, axis=1, efunc=energy_function, cfunc=compute_cost
     assert size > W, "size must be greather than %d" % W
 
     ### YOUR CODE HERE
+    while W<size:
+        eng = efunc(out)
+        cost, paths = cfunc(out, eng)
+        end = np.argmin(cost[-1])
+        seam = bfunc(paths, end)
+        out = dfunc(out, seam)
+        W += 1
     pass
     ### END YOUR CODE
 
@@ -391,6 +438,15 @@ def enlarge(image, size, axis=1, efunc=energy_function, cfunc=compute_cost, dfun
     assert size <= 2 * W, "size must be smaller than %d" % (2 * W)
 
     ### YOUR CODE HERE
+    seams = find_seams(out, size - W)
+    seams = np.expand_dims(seams, axis=2)
+    for i in range(size - W):
+        # seam = np.where(seams == i+1)[1] + i
+        # out = dfunc(out, seam)
+        # seams += 1
+
+        out = duplicate_seam(out, np.where(seams == i + 1)[1])
+        seams = duplicate_seam(seams, np.where(seams == i + 1)[1])
     pass
     ### END YOUR CODE
 
@@ -433,6 +489,62 @@ def compute_forward_cost(image, energy):
     paths[0] = 0  # we don't care about the first row of paths
 
     ### YOUR CODE HERE
+    for i in range(1, H):
+        # Calculate forward cost map at each pixel
+        '''
+        Forward cost map = M[i,j] = min(
+                                        M[i-1, j-1] + CL,
+                                        M[i-1, j] + CV,
+                                        M[i-1, j+1] + CR
+                                    )
+        where
+            CL = |I[i-1, j] - I[i, j-1]| - |I[i, j+1] - I[i, j-1]|
+            CV = |I[i, j+1] - I[i, j-1]|
+            CR = |I[i-1, j] - I[i, j+1]| - |I[i, j-1] - I[i, j+1]|
+        '''
+        M_left = cost[i - 1][:W - 1]
+        M_left = np.insert(M_left, 0, 1 << 32, axis=0)
+        M_mid = cost[i - 1]
+        M_right = cost[i - 1][1:]
+        M_right = np.insert(M_right, W - 1, 1 << 32, axis=0)
+
+        # I[i, j-1]
+        I_left = np.insert(image[i][:W - 1], 0, 0, axis=0)
+        # I[i-1, j]
+        I_mid = image[i - 1]
+        # I[i, j+1]
+        I_right = np.insert(image[i][1:], W - 1, 0, axis=0)
+
+        CV = np.abs(I_right - I_left)
+        CV[0] = 0
+        CV[-1] = 0
+        CL = np.abs(I_mid - I_left) + CV
+        CL[0] = 0
+        CR = np.abs(I_mid - I_right) + CV
+        CR[-1] = 0
+
+        M = np.array([M_left + CL, M_mid + CV, M_right + CR])
+        cost[i] = energy[i] + np.min(M, axis=0)
+
+        # if i==2:
+        #     print("Ileft", I_left)
+        #     print("Imid", I_mid)
+        #     print("Iright", I_right)
+        #     print("CL", CL)
+        #     print("CV", CV)
+        #     print("CR", CR)
+        #     print("Mleft", M_left)
+        #     print("Mmid", M_mid)
+        #     print("Mright", M_right)
+
+        # Pick minimum cost at row i-1 as path
+        '''
+        M.shape = (3, W), argmin returns 0~2
+        return 0 -> path should go through up and left
+        return 1 -> path should go through up
+        return 2 -> path should go through up and right
+        '''
+        paths[i] = np.argmin(M, axis=0) - 1
     pass
     ### END YOUR CODE
 
@@ -442,6 +554,57 @@ def compute_forward_cost(image, energy):
 
     return cost, paths
 
+
+def energy_fast(image, energy, lower, upper):
+    """Computes energy of the input image.
+    For each pixel, we will sum the absolute value of the gradient in each direction.
+    Don't forget to convert to grayscale first.
+    Hint: Use np.gradient here
+    Args:
+        image: numpy array of shape (H, W, 3)
+    Returns:
+        out: numpy array of shape (H, W)
+    """
+    H, W, _ = image.shape
+    out = np.zeros((H, W))
+    gray_image = color.rgb2gray(image)
+
+    ### YOUR CODE HERE
+    '''
+    np.gradient return: 
+    A list of ndarrays (or a single ndarray if there is only one dimension) 
+    corresponding to the derivatives of f with respect to each dimension. 
+    Each derivative has the same shape as f.
+    '''
+    # only update the range that the seam covered
+    # W_out = W_energy - 1
+    # update left part
+    if lower <= 1:
+        # print(lower, upper)
+        dy, dx = np.gradient(gray_image[:, 0:upper + 1])
+        updateRange = (abs(dx) + abs(dy))[:, :-1]  # range 0~upper+1
+        out = np.concatenate((updateRange, energy[:, upper + 1:]), axis=1)
+    # update right part
+    elif upper >= W - 2:
+        dy, dx = np.gradient(gray_image[:, lower - 2:])
+        updateRange = (abs(dx) + abs(dy))[:, 1:]  # range lower-3~end
+        out = np.concatenate((energy[:, :lower - 1], updateRange), axis=1)
+    # update middle part
+    else:
+        dy, dx = np.gradient(gray_image[:, lower - 2:upper + 2])
+        updateRange = (abs(dx) + abs(dy))[:, 1:-1]  # range lower-1~upper+1
+        out = np.concatenate((energy[:, :lower - 1], updateRange, energy[:, upper + 2:]), axis=1)
+
+    # if i <= 1:
+    #     energy = np.c_[efunc(out[:, 0: j+1])[:, :-1], energy[:, j+1: ]]
+    # elif j >= out.shape[1]-2:
+    #     energy = np.c_[energy[:, 0: i-1], efunc(out[:, i-2: ])[:, 1: ]]
+    # else:
+    #     energy = np.c_[energy[:, 0: i-1], efunc(out[:, i-2: j+2])[:, 1: -1], energy[:, j+2:]]
+    # print("image", image.shape, "out", out.shape)
+    ### END YOUR CODE
+
+    return out
 
 def reduce_fast(image, size, axis=1, efunc=energy_function, cfunc=compute_cost):
     """Reduces the size of the image using the seam carving process. Faster than `reduce`.
@@ -473,7 +636,17 @@ def reduce_fast(image, size, axis=1, efunc=energy_function, cfunc=compute_cost):
 
     ### YOUR CODE HERE
     # Delete that line, just here for the autograder to pass setup checks
-    out = reduce(image, size, 1, efunc, cfunc)
+    #out = reduce(image, size, 1, efunc, cfunc)
+    energy = energy_function(out)
+    for _ in range(W - size):
+        cost, paths = cfunc(out, energy)
+        seam = backtrack_seam(paths, np.argmin(cost[-1]))
+        out = remove_seam(out, seam)
+
+        # update lower and upper bound
+        lower = np.min(seam)
+        upper = np.max(seam)
+        energy = energy_fast(out, energy, lower, upper)
     pass
     ### END YOUR CODE
 
@@ -503,6 +676,22 @@ def remove_object(image, mask):
     out = np.copy(image)
 
     ### YOUR CODE HERE
+    energy = energy_function(out)
+    weighted_energy = energy - (mask * 1e10)
+    while not np.all(mask == 0):
+        cost, paths = compute_forward_cost(out, weighted_energy)
+        seam = backtrack_seam(paths, np.argmin(cost[-1]))
+        out = remove_seam(out, seam)
+        mask = remove_seam(mask, seam)
+
+        # update energy map
+        lower = np.min(seam)  # update lower bound
+        upper = np.max(seam)  # update upper bound
+        energy = energy_fast(out, energy, lower, upper)  # return W-1 width energy = out width
+        weighted_energy = energy - (mask * 1e10)
+
+    # Enlarge image
+    out = enlarge(out, W)
     pass
     ### END YOUR CODE
 

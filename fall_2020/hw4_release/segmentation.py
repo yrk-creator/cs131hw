@@ -45,6 +45,15 @@ def kmeans(features, k, num_iters=100):
 
     for n in range(num_iters):
         ### YOUR CODE HERE
+        for i in range(N):
+            dists = np.sum((features[i]-centers)**2,axis=1)
+            
+            assignments[i] = np.argmin(dists)
+#             print(assignments[i])
+        for i in range(k):
+            idx = (assignments==i)
+#             print(assignments[idx])
+            centers[i] = np.mean(features[idx],axis=0)
         pass
         ### END YOUR CODE
 
@@ -81,6 +90,10 @@ def kmeans_fast(features, k, num_iters=100):
 
     for n in range(num_iters):
         ### YOUR CODE HERE
+        dists = cdist(features,centers,'euclidean')
+        assignments = np.argmin(dists,axis=1)
+        for i in range(k):
+            centers[i] = np.mean(features[np.nonzero(assignments==i)],axis=0)
         pass
         ### END YOUR CODE
 
@@ -136,6 +149,24 @@ def hierarchical_clustering(features, k):
 
     while n_clusters > k:
         ### YOUR CODE HERE
+        distance = pdist(centers)
+        # print('---',centers.shape[0])
+        # print('+++',distance.shape)
+        dist_matrix = squareform(distance)  # dist_matrix = cdist(centers, centers, 'euclidean')
+
+        # Merge the pair of clusters that are closest to each other
+        dist_matrix[dist_matrix==0] = 1<<32 # because there 0 at diagonal index
+        min_row, min_col = np.unravel_index(dist_matrix.argmin(), dist_matrix.shape) # (min_row,), (min_col,) = np.where(dist_matrix == np.amin(dist_matrix))
+        # print('+++',dist_matrix.argmin())
+        save_idx = min(min_row, min_col)
+        merge_idx = max(min_row, min_col)
+        assignments[assignments==merge_idx] = save_idx
+        assignments[assignments>=merge_idx] -= 1
+        
+        # Compute new center of merged cluster
+        centers = np.delete(centers, merge_idx, axis = 0)
+        centers[save_idx] = np.mean(features[assignments==save_idx], axis=0)
+        n_clusters -= 1
         pass
         ### END YOUR CODE
 
@@ -157,6 +188,7 @@ def color_features(img):
     features = np.zeros((H*W, C))
 
     ### YOUR CODE HERE
+    features = img.reshape(features.shape)
     pass
     ### END YOUR CODE
 
@@ -186,6 +218,9 @@ def color_position_features(img):
     features = np.zeros((H*W, C+2))
 
     ### YOUR CODE HERE
+    axes = np.mgrid[0:H,0:W]
+    features = np.dstack((color,axes[0],axes[1])).reshape((H*W,-1))
+    features = (features - np.mean(features, axis=0)) / np.std(features, axis=0)
     pass
     ### END YOUR CODE
 
@@ -202,6 +237,59 @@ def my_features(img):
     """
     features = None
     ### YOUR CODE HERE
+    H, W, C = img.shape
+    color = img_as_float(img)
+    # features = np.zeros((H*W, C+2))
+    # features = np.zeros((H*W, C+2+1))
+    # features = np.zeros((H*W, C+2+2))
+    # features = np.zeros((H*W, C+2+C))
+    features = np.zeros((H * W, C + 2 + C + 1))
+    # features = np.zeros((H*W, C+C+1))
+
+    pos = np.dstack(np.mgrid[0:H, 0:W]).reshape(H * W, 2)
+    pos = (pos - np.mean(pos, axis=0)) / np.std(pos, axis=0)
+
+    # pos in r-theta coordinate
+    # Y, X = np.mgrid[:H, :W]
+    # Y -= int(H/2)
+    # X -= int(W/2)
+    # theta = np.rad2deg(np.arctan2(Y, X))
+    # theta = ((theta+360.0)%360).reshape(H*W, 1)
+    # R = ((X**2+Y**2)**0.5).reshape(H*W, 1)
+    # theta = (theta - np.mean(theta, axis=0))/ np.std(theta, axis=0)
+    # R = (R - np.mean(R, axis=0))/ np.std(R, axis=0)
+
+    # Gradient
+    from edge import gaussian_kernel, conv, gradient
+    from skimage.color import rgb2gray
+    kernel = gaussian_kernel(9, 1.4)
+    img_gray = rgb2gray(img)
+    smoothed = conv(img_gray, kernel)
+    G, theta = gradient(smoothed)
+    theta = theta.reshape(H * W, 1)
+    theta = (theta - np.mean(theta, axis=0)) / np.std(theta, axis=0)
+    # G = G.reshape(H*W, 1)
+    # G = (G - np.mean(G, axis=0))/ np.std(G, axis=0)
+
+    # HSV
+    from skimage.color import rgb2hsv
+    hsv = rgb2hsv(img)
+    hsv = hsv.reshape(H * W, C)
+    hsv = (hsv - np.mean(hsv, axis=0)) / np.std(hsv, axis=0)
+
+    features[:, 0:C] = color.reshape(H * W, C)
+    features[:, C:C + 2] = pos
+    # features[:, C+2:C+3] = theta
+    # features[:, C+3:C+4] = R
+    # features[:, C+2:C+3] = theta
+    # features[:, C+3:C+4] = G
+    # features[:, C+2:C+3] = G
+    features[:, C + 2:C + 2 + C] = hsv
+    # features[:, C:C+C] = hsv
+    # features[:, C+2+C:C+2+C+1] = G
+    features[:, C + 2 + C:C + 2 + C + 1] = theta
+    # features[:, C+C:C+C+1] = theta
+    features = (features - np.mean(features, axis=0)) / np.std(features, axis=0)
     pass
     ### END YOUR CODE
     return features
@@ -226,6 +314,8 @@ def compute_accuracy(mask_gt, mask):
 
     accuracy = None
     ### YOUR CODE HERE
+    correct = np.sum(mask_gt==mask)
+    accuracy = correct / (mask_gt.shape[0]*mask_gt.shape[1])
     pass
     ### END YOUR CODE
 

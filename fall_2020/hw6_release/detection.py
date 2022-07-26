@@ -24,6 +24,7 @@ def hog_feature(image, pixel_per_cell=8):
         hog_image: an image representation of hog provided by skimage.
     """
     ### YOUR CODE HERE
+    hog_feature, hog_image = feature.hog(image, pixels_per_cell=(pixel_per_cell,pixel_per_cell), visualize=True)
     pass
     ### END YOUR CODE
     return (hog_feature, hog_image)

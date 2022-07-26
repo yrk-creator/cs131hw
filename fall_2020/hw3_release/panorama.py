@@ -53,6 +53,22 @@ def harris_corners(img, window_size=3, k=0.04):
     dy = filters.sobel_h(img)
 
     ### YOUR CODE HERE
+    dx2 = dx*dx
+    dy2 = dy*dy
+    dxy = dx*dy
+    sdx2 = convolve(dx2, window, mode='constant', cval=0)
+    sdy2 = convolve(dy2, window, mode='constant', cval=0)
+    sdxy = convolve(dxy, window, mode='constant', cval=0)
+    for y in range(H):
+        for x in range(W):
+            # 4. Compute M at each pixel
+            M = np.array([
+                [sdx2[y,x], sdxy[y,x]],
+                [sdxy[y,x], sdy2[y,x]]
+            ])
+
+            # 5. Compute R at each pixel by getting eigenvalue of M
+            response[y, x] = np.linalg.det(M) - k*np.trace(M)**2
     pass
     ### END YOUR CODE
 
@@ -79,6 +95,9 @@ def simple_descriptor(patch):
     """
     feature = []
     ### YOUR CODE HERE
+    H,W = patch.shape
+    feature = patch.reshape(H*W)
+    feature = (feature - np.mean(feature))/(np.std(feature) if np.std(feature)!=0 else 1)
     pass
     ### END YOUR CODE
     return feature
@@ -134,6 +153,11 @@ def match_descriptors(desc1, desc2, threshold=0.5):
     dists = cdist(desc1, desc2)
 
     ### YOUR CODE HERE
+    for i in range(M):
+        min1,min2 = np.argsort(dists[i])[:2]
+        if dists[i,min1]/dists[i,min2]<threshold:
+            matches.append([i,min1])
+    matches = np.asarray(matches)
     pass
     ### END YOUR CODE
 
@@ -167,6 +191,7 @@ def fit_affine_matrix(p1, p2):
     p2 = pad(p2)
 
     ### YOUR CODE HERE
+    H = np.linalg.lstsq(p2,p1,rcond=None)[0]
     pass
     ### END YOUR CODE
 
@@ -238,6 +263,20 @@ def ransac(keypoints1, keypoints2, matches, n_iters=200, threshold=20):
     '''
 
     ### YOUR CODE HERE
+    for i in range(n_iters):
+        np.random.shuffle(matches)
+        samples = matches[:n_samples]
+        sample1 = keypoints1[samples[:,0]]
+        sample2 = keypoints2[samples[:,1]]
+        
+        H = fit_affine_matrix(sample1,sample2)
+        dists = np.linalg.norm(matched2.dot(H)-matched1, axis=1, ord=2)
+        mask_inliners = dists < threshold
+        n_tmp = np.count_nonzero(mask_inliners)
+        if n_tmp > n_inliers:
+            n_inliers = n_tmp
+            max_inliers = mask_inliners.copy()
+    H = fit_affine_matrix(keypoints1[orig_matches[:,0]][max_inliers], keypoints2[orig_matches[:,1]][max_inliers])
     pass
     ### END YOUR CODE
     return H, orig_matches[max_inliers]
@@ -289,6 +328,14 @@ def hog_descriptor(patch, pixels_per_cell=(8,8)):
 
     # Compute histogram per cell
     ### YOUR CODE HERE
+    for i in range(rows):
+        for j in range(cols):
+            for a in range(pixels_per_cell[0]):
+                for b in range(pixels_per_cell[1]):
+                    cells[i,j,int(theta_cells[i,j,a,b]//20)%n_bins]+=G_cells[i,j,a,b]
+    block = cells.flatten()
+    block = block / np.linalg.norm(block)
+    
     pass
     ### YOUR CODE HERE
 
@@ -325,6 +372,22 @@ def linear_blend(img1_warped, img2_warped):
     left_margin = np.argmax(img2_mask[out_H//2, :].reshape(1, out_W), 1)[0]
 
     ### YOUR CODE HERE
+    # 2. Define a weight matrices for img1_warped and img2_warped
+    #   np.linspace and np.tile functions will be useful
+    weight1 = np.ones_like(img1_warped)
+    weight2 = np.ones_like(img2_warped)
+    weight1[:, left_margin:right_margin] = np.tile(np.linspace(1,0,right_margin-left_margin), (weight1.shape[0],1))
+    weight2[:, left_margin:right_margin] = np.tile(np.linspace(0,1,right_margin-left_margin), (weight2.shape[0],1))
+    weight1[:,right_margin:] = 0
+    weight2[:,:left_margin] = 0
+
+    # 3. Apply the weight matrices to their corresponding images
+    img1_warped = img1_warped*img1_mask*weight1
+    img2_warped = img2_warped*img2_mask*weight2
+
+    # 4. Combine the images
+    merged = img1_warped+img2_warped
+
     pass
     ### END YOUR CODE
 
@@ -366,6 +429,24 @@ def stitch_multiple_images(imgs, desc_func=simple_descriptor, patch_size=5):
         matches.append(mtchs)
 
     ### YOUR CODE HERE
+    Hs = [np.eye(3)]
+    for i, match in enumerate(matches):
+        H, robust_matches = ransac(keypoints[i], keypoints[i+1], match, threshold=1)
+        Hs.append(H)
+    
+    # combine the effects of multiple transformation matrices.
+    for i in range(1, len(Hs)):
+        Hs[i] = Hs[i].dot(Hs[i-1])
+
+    output_shape, offset = get_output_space(imgs[0], imgs[1:], Hs[1:])
+    for i, img in enumerate(imgs):
+        img_warped = warp_image(img, Hs[i], output_shape, offset)
+        img_mask = (img_warped != -1) # Mask == 1 inside the image
+        img_warped[~img_mask] = 0     # Return background values to 0
+
+        if i==0: panorama = img_warped
+        else: panorama = linear_blend(panorama, img_warped)
+        
     pass
     ### END YOUR CODE
 

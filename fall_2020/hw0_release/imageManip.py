@@ -20,6 +20,7 @@ def load(image_path):
 
     ### YOUR CODE HERE
     # Use skimage io.imread
+    out = io.imread(image_path)
     pass
     ### END YOUR CODE
 
@@ -45,6 +46,7 @@ def crop_image(image, start_row, start_col, num_rows, num_cols):
     out = None
 
     ### YOUR CODE HERE
+    out = image[start_row:start_row+num_rows,start_col:start_col+num_cols]
     pass
     ### END YOUR CODE
 
@@ -69,6 +71,7 @@ def dim_image(image):
 
     ### YOUR CODE HERE
     pass
+    out = 0.5*image**2
     ### END YOUR CODE
 
     return out
@@ -96,6 +99,11 @@ def resize_image(input_image, output_rows, output_cols):
     #    > This should require two nested for loops!
 
     ### YOUR CODE HERE
+    row_factor = input_rows/output_rows
+    col_factor = input_cols/output_cols
+    for i in range(output_rows):
+        for j in range(output_cols):
+            output_image[i,j] = input_image[int(i*row_factor),int(j*col_factor),:]
     pass
     ### END YOUR CODE
 
@@ -119,6 +127,11 @@ def rotate2d(point, theta):
     # Reminder: np.cos() and np.sin() will be useful here!
 
     ## YOUR CODE HERE
+
+    # x1 = y*np.cos(theta)+x*np.sin(theta)
+    # y1 = x*np.cos(theta)-y*np.sin(theta)
+    # return np.array([x1,y1])
+    return np.dot(np.array([[np.cos(theta),-np.sin(theta)],[np.sin(theta),np.cos(theta)]]),point)
     pass
     ### END YOUR CODE
 
@@ -141,6 +154,16 @@ def rotate_image(input_image, theta):
     output_image = np.zeros_like(input_image)
 
     ## YOUR CODE HERE
+    h = input_rows//2
+    w = input_cols//2
+    print(input_rows,input_cols)
+    for i in range(input_rows):
+        for j in range(input_cols):
+            p = np.array([i,j])
+            p-=np.array([h,w])
+            point = rotate2d(p,theta)+np.array([h,w])
+            if point[0]>=0 and point[0]<=input_rows and point[1]>=0 and point[1]<input_cols:
+                output_image[i,j]=input_image[int(point[0]),int(point[1])]
     pass
     ### END YOUR CODE
 

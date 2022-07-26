@@ -27,6 +27,10 @@ def compute_distances(X1, X2):
     #
     # HINT: Try to formulate the l2 distance using matrix multiplication
 
+    X1_square = np.sum(np.square(X1), axis=1)
+    X2_square = np.sum(np.square(X2), axis=1)
+    dists = np.sqrt(X1_square.reshape(-1, 1) - 2 * X1.dot(X2.T) + X2_square)
+
     pass
     # END YOUR CODE
 
@@ -65,6 +69,10 @@ def predict_labels(dists, y_train, k=1):
         # label.
 
         # YOUR CODE HERE
+        closest_y = y_train[np.argsort(dists[i])[:k]]
+
+        counts = np.bincount(closest_y)
+        y_pred[i] = np.argmax(counts)
         pass
         # END YOUR CODE
 
@@ -92,7 +100,7 @@ def split_folds(X_train, y_train, num_folds):
         y_train: numpy array of shape (N,) containing the label of each example
         num_folds: number of folds to split the data into
 
-    jeturns:
+    returns:
         X_trains: numpy array of shape (num_folds, train_size * (num_folds-1) / num_folds, D)
         y_trains: numpy array of shape (num_folds, train_size * (num_folds-1) / num_folds)
         X_vals: numpy array of shape (num_folds, train_size / num_folds, D)
@@ -111,6 +119,15 @@ def split_folds(X_train, y_train, num_folds):
 
     # YOUR CODE HERE
     # Hint: You can use the numpy array_split function.
+
+    X_lst = np.array_split(X_train, num_folds, axis=0)
+    # y_train = y_train.reshape(-1, 1)
+    y_lst = np.array_split(y_train, num_folds, axis=0)
+    for i in range(num_folds):
+        X_vals[i, :, :] = X_lst[i]
+        X_trains[i, :, :] = np.vstack(X_lst[:i] + X_lst[i + 1:])
+        y_vals[i, :] = y_lst[i][:]
+        y_trains[i, :] = np.hstack(y_lst[:i] + y_lst[i + 1:])[:]
     pass
     # END YOUR CODE
 
